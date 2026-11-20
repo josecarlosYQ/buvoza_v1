@@ -6,12 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:buvoza_v1/models/form_entry.dart';
 import 'package:buvoza_v1/screens/acta_screen.dart';
 import 'package:buvoza_v1/screens/almacen_screen.dart';
+import 'package:buvoza_v1/screens/atenciones_screen.dart';
 import 'package:buvoza_v1/screens/bitacora_screen.dart';
 import 'package:buvoza_v1/screens/form_base.dart';
 import 'package:buvoza_v1/screens/horas_screen.dart';
 import 'package:buvoza_v1/screens/oxigeno_screen.dart';
 import 'package:buvoza_v1/screens/procedimientos_screen.dart';
 import 'package:buvoza_v1/screens/soapie_screen.dart';
+import 'package:buvoza_v1/screens/spec_form_screen.dart';
+import 'package:buvoza_v1/models/spec_forms.dart';
 import 'package:buvoza_v1/screens/turno_screen.dart';
 
 /// Llena cada formulario con frases como las que entrega el reconocedor de voz
@@ -180,5 +183,92 @@ void main() {
     expect(e.text('horaSalida'), '19:00');
     expect(e.data['confortSalida'], 'Húmedo');
     expect(e.text('responsable'), 'Rosa Pérez');
+  });
+
+  testWidgets('Atenciones diarias por voz', (tester) async {
+    final e = await dictate(tester, const AtencionesScreen(), [
+      'turno noche ficha 963 paciente Karina Merma Quispe edad 43 sexo femenino dirección Nuevo Ilo',
+      'prioridad dos accidente de tránsito retención de camilla 1.5 diagnóstico crisis de ansiedad médico Mirian Núñez',
+    ]);
+    expect(e.shift, 'N');
+    expect(e.text('ficha'), '963');
+    expect(e.text('paciente'), 'Karina Merma Quispe');
+    expect(e.text('edad'), '43');
+    expect(e.data['sexo'], 'F');
+    expect(e.text('direccion'), 'Nuevo Ilo');
+    expect(e.data['prioridad'], 'II');
+    expect(e.data['transito'], isTrue);
+    expect(e.data['caida'], isFalse);
+    expect(e.text('retencionHoras'), '1.5');
+    expect(e.text('diagnostico'), 'Crisis de ansiedad');
+    expect(e.text('medico'), 'Mirian Núñez');
+  });
+
+  testWidgets('Ficha de atención prehospitalaria por voz', (tester) async {
+    final e = await dictate(tester, const SpecFormScreen(spec: fichaAphSpec), [
+      'número de ficha 1024 hora de despacho 7 46 llegada a foco 7 57 prioridad dos atención traslado',
+      'paciente Rosa Huaricapa Flores edad 52 sexo femenino dni 45678912 distrito Ilo seguro SIS',
+      'presión arterial 150 sobre 90 frecuencia cardiaca 110 saturación 91 apertura ocular 4 respuesta verbal 5 respuesta motora 6',
+      'presión arterial 130 sobre 80 frecuencia cardiaca 92',
+      'tipo de vehículo mototaxi cinemática impacto frontal procedimientos oxigenoterapia y inmovilización completa',
+      'medicamento metamizol dosis 1 gramo vía endovenosa hora del medicamento 8 10',
+      'diagnóstico uno policontuso cie uno T07 establecimiento hospital de Ilo camilla retenida sí',
+    ]);
+    expect(e.text('numero'), '1024');
+    expect(e.text('horaDespacho'), '07:46');
+    expect(e.data['prioridad'], 'II');
+    expect(e.data['atencion'], 'Traslado');
+    expect(e.text('paciente'), 'Rosa Huaricapa Flores');
+    expect(e.data['sexo'], 'F');
+    expect(e.data['seguro'], 'SIS');
+    final evals = e.data['evaluaciones'] as List;
+    expect(evals.length, 2, reason: 'la segunda presión abre otra evaluación');
+    expect(evals[0]['pa'], '150/90');
+    expect(evals[0]['gt'], '15');
+    expect(evals[1]['fc'], '92');
+    expect(e.data['tipoVehiculo'], ['Mototaxi']);
+    expect(e.data['cinematica'], ['Impacto frontal']);
+    expect(e.data['procedimientos'], containsAll(['Oxigenoterapia', 'Inmovilización completa']));
+    final meds = e.data['medicacion'] as List;
+    expect(meds.single['medicamento'], 'Metamizol');
+    expect(meds.single['via'], 'EV');
+    expect(meds.single['hora'], '08:10');
+    expect(e.text('dx1'), 'Policontuso');
+    expect(e.data['camillaRetenida'], 'Sí');
+  });
+
+  testWidgets('CRUE por voz', (tester) async {
+    final e = await dictate(tester, const SpecFormScreen(spec: crueSpec), [
+      'número crue 0973 hora de la llamada 7 46 paciente Juan Pérez edad 40 tipo de atención traslado trasladado a minsa distrito el algarrobal',
+      'sector Mercado de Abastos accidente de tránsito sí prioridad uno seguro soat sintomatología dolor abdominal',
+      'deriva médico 7 46 indica ambulancia 7 49 salida ambulancia 7 50 llegada a foco 7 57 llegada a base 9 13',
+    ]);
+    expect(e.text('nroCrue'), '0973');
+    expect(e.text('horaLlamada'), '07:46');
+    expect(e.data['tipoAtencion'], 'Traslado');
+    expect(e.data['trasladoA'], 'MINSA');
+    expect(e.data['distrito'], 'El Algarrobal');
+    expect(e.data['transito'], 'Sí');
+    expect(e.data['prioridad'], 'I');
+    expect(e.data['seguro'], 'Otros');
+    expect(e.text('horaIndica'), '07:49');
+    expect(e.text('horaLlegadaBase'), '09:13');
+  });
+
+  testWidgets('Reporte médico diario por voz', (tester) async {
+    final e = await dictate(tester, const SpecFormScreen(spec: reporteMedicoSpec), [
+      'turno día placa EUC 935 equipo 1 médico Mirian Núñez',
+      'hora de ocurrencia 7 45 ocurrencia se acude a vía pública de El Algarrobal se traslada a hospital minsa',
+      'hora de ocurrencia 9 30 ocurrencia se acude a Vista Alegre atención frustra',
+      'efectivas 1 frustras 1 pendientes recoger férula y collarín adulto',
+    ]);
+    expect(e.shift, 'D');
+    expect(e.text('medico'), 'Mirian Núñez');
+    final occ = e.data['ocurrencias'] as List;
+    expect(occ.length, 2);
+    expect(occ[0]['hora'], '07:45');
+    expect(occ[0]['detalle'], startsWith('Se acude a vía pública'));
+    expect(occ[1]['hora'], '09:30');
+    expect(e.text('total'), '2');
   });
 }

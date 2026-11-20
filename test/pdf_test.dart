@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:buvoza_v1/models/catalogs.dart';
 import 'package:buvoza_v1/models/driver_catalogs.dart';
 import 'package:buvoza_v1/models/form_entry.dart';
+import 'package:buvoza_v1/models/spec_forms.dart';
 import 'package:buvoza_v1/services/clinical_pdf_service.dart';
 
 /// Genera cada PDF con datos de ejemplo para detectar errores de maquetación.
@@ -107,4 +108,33 @@ void main() {
         }),
         s,
       )));
+
+  test('Registro de atenciones diarias mensual (40 filas, con cancelado)', () => expectPdf(() => pdf.atenciones([
+        for (var i = 0; i < 40; i++)
+          FormEntry(type: FormType.atenciones, date: DateTime(2026, 9, 1 + i % 28), shift: i.isEven ? 'MT' : 'N', data: {
+            'unidad': 'AMB-01', 'placa': 'EGO-123', 'ficha': '${952 + i}', 'paciente': 'Paciente de prueba número $i',
+            'edad': '${20 + i}', 'sexo': i.isEven ? 'F' : 'M', 'direccion': 'Pampa Inalámbrica', 'prioridad': const ['I', 'II', 'III', 'IV'][i % 4],
+            'fallecido': i == 5 ? 'foco' : '', 'transito': i % 3 == 0, 'caida': i % 7 == 0, 'retencionHoras': i == 2 ? '1.5' : '',
+            'cancelado': i == 9, 'diagnostico': 'Crisis de ansiedad con taquicardia', 'medico': 'Dr. Díaz',
+          }),
+      ], const Period(2026, 9, 0), s)));
+
+  test('Ficha APH, reporte médico y CRUE (formatos por especificación)', () async {
+    Map<String, dynamic> fill(FormSpec spec) => {
+          for (final f in spec.allFields)
+            f.key: switch (f.kind) {
+              SpecKind.choice => f.options.keys.first,
+              SpecKind.flags => f.options.keys.take(2).toList(),
+              SpecKind.rows => [
+                  for (var i = 0; i < 3; i++) {for (final c in f.fields) c.key: c.kind == SpecKind.choice ? c.options.keys.first : '1$i'},
+                ],
+              _ => 'Texto de prueba para ${f.label}',
+            },
+        };
+    await expectPdf(() => pdf.specEntry(FormEntry(type: FormType.fichaAph, data: fill(fichaAphSpec)), s));
+    await expectPdf(() => pdf.specEntry(FormEntry(type: FormType.reporteMedico, shift: 'D', data: fill(reporteMedicoSpec)), s));
+    await expectPdf(() => pdf.specReport([
+          for (var d = 1; d <= 12; d++) FormEntry(type: FormType.crue, date: DateTime(2026, 9, d), data: fill(crueSpec)),
+        ], const Period(2026, 9, 0), s));
+  });
 }

@@ -4,16 +4,19 @@ import 'package:intl/intl.dart';
 import '../models/catalogs.dart';
 import '../models/driver_catalogs.dart';
 import '../models/form_entry.dart';
+import '../models/spec_forms.dart';
 import '../services/clinical_pdf_service.dart';
 import '../services/record_store.dart';
 import '../widgets/form_widgets.dart';
 import 'acta_screen.dart';
 import 'almacen_screen.dart';
+import 'atenciones_screen.dart';
 import 'bitacora_screen.dart';
 import 'horas_screen.dart';
 import 'oxigeno_screen.dart';
 import 'procedimientos_screen.dart';
 import 'settings_screen.dart';
+import 'spec_form_screen.dart';
 import 'soapie_screen.dart';
 import 'turno_screen.dart';
 
@@ -21,6 +24,8 @@ Widget editorFor(FormType type, [FormEntry? entry]) => switch (type) {
       FormType.bitacora => BitacoraScreen(entry: entry),
       FormType.actaMecanica => ActaScreen(entry: entry),
       FormType.horasEmergencia => HorasScreen(entry: entry),
+      FormType.atenciones => AtencionesScreen(entry: entry),
+      FormType.fichaAph || FormType.crue || FormType.reporteMedico => SpecFormScreen(spec: specFor(type)!, entry: entry),
       FormType.soapie => SoapieScreen(entry: entry),
       FormType.turno => TurnoScreen(entry: entry),
       FormType.procedimientos => ProcedimientosScreen(entry: entry),
@@ -48,7 +53,12 @@ class RoleFormsScreen extends StatelessWidget {
         ],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        const InfoBanner(text: 'Formatos SAMU. Registra en cada turno y genera el PDF del reporte (quincenal o mensual) cuando lo necesites.'),
+        InfoBanner(
+            text: switch (role) {
+          ClinicalRole.conductor => 'Formatos del conductor: bitácora de servicio, acta de conformidad mecánica y registro de horas de la emergencia. Cada registro genera su PDF.',
+          ClinicalRole.medico => 'Formatos del médico: la ficha prehospitalaria y el reporte diario generan su PDF; las atenciones diarias y el CRUE, una hoja por mes.',
+          ClinicalRole.enfermeria => 'Plantillas de enfermería: SOAPIE por paciente; entrega de turno, procedimientos y oxígeno por quincena; almacén por mes.',
+        }),
         const SizedBox(height: 12),
         for (final t in forms)
           Card(
@@ -147,6 +157,8 @@ class _FormEntriesScreenState extends State<FormEntriesScreen> {
           FormType.procedimientos => pdf.procedimientos(list, period, s),
           FormType.oxigeno => pdf.oxigeno(list, period, s),
           FormType.almacen => pdf.almacen(list, period, s),
+          FormType.atenciones => pdf.atenciones(list, period, s),
+          FormType.crue => pdf.specReport(list, period, s),
           _ => throw UnsupportedError('${type.title} se imprime por registro'),
         });
   }
@@ -167,6 +179,12 @@ class _FormEntriesScreenState extends State<FormEntriesScreen> {
       case FormType.horasEmergencia:
         final rows = ((e.data['emergencias'] as List?) ?? const []).length;
         return '$rows emergencia(s)';
+      case FormType.atenciones:
+        if (e.data['cancelado'] == true) return 'Cancelado${e.text('paciente').isEmpty ? '' : ' · ${e.text('paciente')}'}';
+        return e.text('paciente').isEmpty ? 'Paciente sin nombre' : e.text('paciente');
+      case FormType.fichaAph || FormType.crue || FormType.reporteMedico:
+        final t = e.text(specFor(type)!.titleKey);
+        return t.isEmpty ? type.title : t;
       case FormType.soapie:
         return e.text('paciente').isEmpty ? 'Paciente sin nombre' : e.text('paciente');
       case FormType.turno:
@@ -189,6 +207,8 @@ class _FormEntriesScreenState extends State<FormEntriesScreen> {
       FormType.bitacora || FormType.actaMecanica => [e.text('placa'), e.text('conductor')].where((x) => x.isNotEmpty).join(' · '),
       FormType.horasEmergencia => [e.text('piloto'), e.text('medico')].where((x) => x.isNotEmpty).join(' · '),
       FormType.oxigeno => e.text('licenciado'),
+      FormType.fichaAph || FormType.crue || FormType.reporteMedico => [for (final k in specFor(type)!.subtitleKeys) e.text(k)].where((x) => x.isNotEmpty).join(' · '),
+      FormType.atenciones => [e.text('diagnostico'), e.text('prioridad').isEmpty ? '' : 'Prioridad ${e.text('prioridad')}'].where((x) => x.isNotEmpty).join(' · '),
       _ => e.text('licenciada').isNotEmpty ? e.text('licenciada') : e.text('responsable'),
     };
     return [_dateLabel(e), if (who.isNotEmpty) who].join('\n');

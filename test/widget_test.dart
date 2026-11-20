@@ -53,5 +53,15 @@ void main() {
     expect(parseKm('120 350 km'), 120350);
     expect(FormType.values.where((t) => t.roles.contains(ClinicalRole.conductor)),
         [FormType.bitacora, FormType.actaMecanica, FormType.horasEmergencia]);
+    for (final t in [FormType.bitacora, FormType.actaMecanica, FormType.horasEmergencia]) {
+      expect(t.roles, [ClinicalRole.conductor], reason: '${t.title} es solo del conductor');
+    }
+    expect(FormType.values.where((t) => t.roles.contains(ClinicalRole.medico)),
+        [FormType.atenciones, FormType.fichaAph, FormType.crue, FormType.reporteMedico]);
+    expect(FormType.values.where((t) => t.roles.contains(ClinicalRole.enfermeria)),
+        [FormType.soapie, FormType.turno, FormType.procedimientos, FormType.oxigeno, FormType.almacen]);
+    for (final t in FormType.values) {
+      expect(t.roles.length, 1, reason: '${t.title} pertenece a un solo rol');
+    }
   });
 }

@@ -421,7 +421,8 @@ String? spokenTime(String v, {DateTime Function()? now}) {
     return _hhmm(t.hour, t.minute);
   }
   int? hour, minute;
-  final clock = RegExp(r'\b(\d{1,2})\s*[:h.]\s*(\d{2})\b').firstMatch(s);
+  // «10:15», «10.15», «10h15» y también «7 46» (el reconocedor a veces omite los dos puntos).
+  final clock = RegExp(r'\b(\d{1,2})\s*[:h.]\s*(\d{2})\b').firstMatch(s) ?? RegExp(r'^\D*\b(\d{1,2})\s+(\d{2})\b').firstMatch(s);
   if (clock != null) {
     hour = int.parse(clock.group(1)!);
     minute = int.parse(clock.group(2)!);

@@ -5,8 +5,8 @@ App Flutter local para registrar informes de ambulancia SAMU con dictado por voz
 ## Roles
 
 - **Conductor**: bitácora de servicio, acta de conformidad mecánica y registro de horas de la emergencia.
-- **Médico**: SOAPIE, consumo de oxígeno, temperatura de almacén y acta mecánica (médico entrante).
-- **Enfermería**: los cinco formatos SAMU.
+- **Médico**: registro de atenciones diarias, ficha de atención prehospitalaria, centro regulador (CRUE) y reporte médico diario.
+- **Enfermería**: las cinco plantillas .xlsx (SOAPIE, entrega de turno, procedimientos, consumo de oxígeno y temperatura de almacén).
 
 ## Formatos SAMU (plantillas .xlsx y formatos impresos del conductor)
 

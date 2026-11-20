@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../models/catalogs.dart';
 import '../models/driver_catalogs.dart';
 import '../models/form_entry.dart';
+import '../models/spec_forms.dart';
 
 /// Genera los PDF con la misma estructura que las plantillas .xlsx de SAMU.
 class ClinicalPdfService {
@@ -23,6 +24,7 @@ class ClinicalPdfService {
         FormType.bitacora => bitacora(e, s),
         FormType.actaMecanica => acta(e, s),
         FormType.horasEmergencia => horas(e, s),
+        FormType.fichaAph || FormType.reporteMedico => specEntry(e, s),
         _ => throw UnsupportedError('${e.type.title} se imprime como reporte del periodo'),
       };
 
@@ -324,6 +326,224 @@ class ClinicalPdfService {
       ],
     ));
     return _save(pdf, 'ALMACEN-${p.fileTag}');
+  }
+
+  // ---------- Registro de atenciones diarias (conductor, hoja mensual) ----------
+
+  Future<File> atenciones(List<FormEntry> entries, Period p, BaseSettings s) async {
+    final pdf = pw.Document();
+    final ordered = [...entries]..sort((a, b) {
+        final byDate = a.date.compareTo(b.date);
+        return byDate != 0 ? byDate : a.createdAt.compareTo(b.createdAt);
+      });
+    final border = pw.TableBorder.all(color: PdfColors.grey700, width: .5);
+    String first(String key, String fallback) =>
+        ordered.map((e) => e.text(key)).firstWhere((v) => v.isNotEmpty, orElse: () => fallback);
+    String x(bool on) => on ? 'X' : '';
+
+    pw.Widget cell(String t, {bool bold = false, PdfColor? color, double size = 7, pw.TextAlign align = pw.TextAlign.left}) => pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+          child: pw.Text(t, textAlign: align, style: pw.TextStyle(fontSize: size, color: color, fontWeight: bold ? pw.FontWeight.bold : null)),
+        );
+    pw.Widget head(String t) => pw.Container(
+          color: _blue,
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 1, vertical: 3),
+          child: pw.Text(t, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 5.8, fontWeight: pw.FontWeight.bold)),
+        );
+    pw.Widget mark(String t) => cell(t, bold: true, align: pw.TextAlign.center);
+
+    const headers = [
+      'N°', 'N° DE\nFICHA', 'FECHA', 'TURNO', 'APELLIDOS Y NOMBRES', 'EDAD', 'SEXO', 'DIRECCIÓN (DISTRITO)',
+      'PRIOR.\nI', 'PRIOR.\nII', 'PRIOR.\nIII', 'PRIOR.\nIV', 'FALLEC.\nEN FOCO', 'FALLEC.\nTRASLADO',
+      'EMERG.\nMASIVA', 'SERV. PREV./\nESPECIAL (h)', 'RETENC.\nCAMILLA (h)', 'HERIDOS\nPOR CAÍDA', 'ACCID.\nTRÁNSITO',
+      'DIAGNÓSTICO', 'MÉDICO DE LA ATENCIÓN',
+    ];
+    const widths = [1.0, 1.5, 1.7, 1.1, 4.2, 1.0, 1.0, 3.2, .9, .9, .9, .9, 1.2, 1.3, 1.2, 1.6, 1.4, 1.3, 1.3, 4.0, 3.2];
+    final dmy = DateFormat('dd/MM/yy');
+
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(20),
+      build: (_) => [
+        _title('REGISTRO DE ATENCIONES DIARIAS'),
+        pw.Center(child: pw.Text('${s.samu} · Dirección Regional de Salud Moquegua · Red Integrada de Salud Ilo', style: const pw.TextStyle(fontSize: 8))),
+        pw.SizedBox(height: 6),
+        _headerRow([
+          ['UNIDAD MÓVIL:', first('unidad', s.ambulance)],
+          ['N° PLACA:', first('placa', s.plate)],
+          ['MES Y AÑO:', '${monthNames[p.month - 1].toUpperCase()} ${p.year}'],
+        ]),
+        pw.Table(
+          border: border,
+          columnWidths: {for (var i = 0; i < widths.length; i++) i: pw.FlexColumnWidth(widths[i])},
+          defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+          children: [
+            pw.TableRow(repeat: true, children: [for (final h in headers) head(h)]),
+            for (var i = 0; i < ordered.length; i++)
+              () {
+                final e = ordered[i];
+                final cancel = e.data['cancelado'] == true;
+                final prio = e.text('prioridad');
+                final death = e.text('fallecido');
+                return pw.TableRow(children: [
+                  mark('${i + 1}'),
+                  cell(e.text('ficha')),
+                  cell(dmy.format(e.date)),
+                  mark(e.shift),
+                  cell(e.text('paciente')),
+                  mark(e.text('edad')),
+                  mark(e.text('sexo')),
+                  cell(e.text('direccion')),
+                  for (final o in const ['I', 'II', 'III', 'IV']) mark(x(prio == o)),
+                  mark(x(death == 'foco')),
+                  mark(x(death == 'traslado')),
+                  mark(x(e.data['emergenciaMasiva'] == true)),
+                  mark(e.text('preventivoHoras')),
+                  mark(e.text('retencionHoras')),
+                  mark(x(e.data['caida'] == true)),
+                  mark(x(e.data['transito'] == true)),
+                  cancel
+                      ? cell(['CANCELADO', e.text('diagnostico')].where((t) => t.isNotEmpty).join(' - '), bold: true, color: _red)
+                      : cell(e.text('diagnostico')),
+                  cell(e.text('medico')),
+                ]);
+              }(),
+          ],
+        ),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          'Atenciones del mes: ${ordered.length} · Canceladas: ${ordered.where((e) => e.data['cancelado'] == true).length} · '
+          'Fallecidos: ${ordered.where((e) => e.text('fallecido').isNotEmpty).length} · '
+          'Accidentes de tránsito: ${ordered.where((e) => e.data['transito'] == true).length}',
+          style: const pw.TextStyle(fontSize: 8),
+        ),
+        _footer('ATE-${p.fileTag}'),
+      ],
+    ));
+    return _save(pdf, 'ATENCIONES-${p.fileTag}');
+  }
+
+  // ---------- Formatos del médico descritos en spec_forms.dart ----------
+
+  /// Texto de un campo tal como se imprime.
+  static String specValue(SpecField f, Map<String, dynamic> data) {
+    if (f.isComputed) return computeSum(f, data);
+    final v = data[f.key];
+    if (v is List) return v.join(', ');
+    final t = (v ?? '').toString();
+    return t.isEmpty || f.unit == null ? t : '$t ${f.unit}';
+  }
+
+  /// Opciones con marca, como en el formato impreso: «(X) Foco   ( ) Traslado».
+  static String _marks(SpecField f, Map<String, dynamic> data) {
+    final v = data[f.key];
+    final chosen = v is List ? v.map((x) => x.toString()).toSet() : {(v ?? '').toString()};
+    return f.options.keys.map((o) => '${chosen.contains(o) ? '(X)' : '(  )'} $o').join('   ');
+  }
+
+  List<pw.Widget> _specSection(SpecSection sec, Map<String, dynamic> data, {double size = 8}) {
+    final border = pw.TableBorder.all(color: PdfColors.grey600, width: .5);
+    pw.Widget labelled(SpecField f) {
+      final marked = f.kind == SpecKind.choice || f.kind == SpecKind.flags;
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        child: pw.RichText(text: pw.TextSpan(children: [
+          pw.TextSpan(text: '${f.label.toUpperCase()}: ', style: pw.TextStyle(fontSize: size - .5, fontWeight: pw.FontWeight.bold)),
+          pw.TextSpan(text: marked ? _marks(f, data) : specValue(f, data), style: pw.TextStyle(fontSize: size)),
+        ])),
+      );
+    }
+
+    final out = <pw.Widget>[_band(sec.title.toUpperCase())];
+    final fields = sec.fields;
+    for (var i = 0; i < fields.length; i++) {
+      final f = fields[i];
+      if (f.kind == SpecKind.rows) {
+        final list = [for (final r in (data[f.key] as List?) ?? const []) Map<String, dynamic>.from(r as Map)];
+        out.add(pw.Table(
+          border: border,
+          defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+          columnWidths: {
+            0: const pw.FixedColumnWidth(18),
+            for (var c = 0; c < f.fields.length; c++)
+              c + 1: pw.FlexColumnWidth(f.fields[c].kind == SpecKind.longText || f.fields[c].kind == SpecKind.text ? 3 : 1),
+          },
+          children: [
+            _tableRow(['N°', for (final c in f.fields) c.label + (c.unit == null ? '' : ' (${c.unit})')], header: true, fontSize: size - 1),
+            for (var r = 0; r < list.length; r++)
+              _tableRow(['${r + 1}', for (final c in f.fields) (list[r][c.key] ?? '').toString()], fontSize: size - .5),
+            if (list.isEmpty) _tableRow(['', for (final _ in f.fields) ''], fontSize: size),
+          ],
+        ));
+        continue;
+      }
+      if (f.half && i + 1 < fields.length && fields[i + 1].half) {
+        out.add(pw.Table(border: border, children: [pw.TableRow(children: [labelled(f), labelled(fields[i + 1])])]));
+        i++;
+      } else {
+        out.add(pw.Table(border: border, children: [pw.TableRow(children: [labelled(f)])]));
+      }
+    }
+    return out;
+  }
+
+  /// PDF de un registro (ficha APH, reporte médico diario).
+  Future<File> specEntry(FormEntry e, BaseSettings s) async {
+    final spec = specFor(e.type)!;
+    final pdf = pw.Document();
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(28),
+      build: (_) => [
+        _title(spec.pdfTitle),
+        pw.Center(child: pw.Text('${s.samu} · Dirección Regional de Salud Moquegua · Red Integrada de Salud Ilo', style: const pw.TextStyle(fontSize: 8))),
+        pw.SizedBox(height: 6),
+        _headerRow([
+          ['FECHA:', _dmy.format(e.date)],
+          if (e.type.shifts.isNotEmpty) ['TURNO:', shiftNames[e.shift] ?? e.shift],
+          ['REGISTRO:', e.id],
+        ]),
+        for (final sec in spec.sections) ..._specSection(sec, e.data),
+        if (spec.signatures.isNotEmpty) ...[
+          pw.SizedBox(height: 12),
+          _signatures([for (final (role, key) in spec.signatures) (role, e.text(key))]),
+        ],
+        _footer(e.id),
+      ],
+    ));
+    return _save(pdf, e.id);
+  }
+
+  /// Reporte del periodo con un bloque por registro (cuaderno del CRUE).
+  Future<File> specReport(List<FormEntry> entries, Period p, BaseSettings s) async {
+    final spec = specFor(entries.first.type)!;
+    final ordered = [...entries]..sort((a, b) {
+        final byDate = a.date.compareTo(b.date);
+        return byDate != 0 ? byDate : a.createdAt.compareTo(b.createdAt);
+      });
+    final pdf = pw.Document();
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(24),
+      build: (_) => [
+        _title(spec.pdfTitle),
+        _headerRow([['SAMU:', s.samu], ['BASE:', s.base], ['MES/AÑO:', p.label], ['REGISTROS:', '${ordered.length}']]),
+        for (var i = 0; i < ordered.length; i++) ...[
+          pw.Container(
+            width: double.infinity,
+            margin: const pw.EdgeInsets.only(top: 10),
+            padding: const pw.EdgeInsets.all(4),
+            color: PdfColors.grey300,
+            child: pw.Text('${i + 1}. ${_dmy.format(ordered[i].date)}  ·  ${ordered[i].text(spec.titleKey).isEmpty ? 'Sin nombre' : ordered[i].text(spec.titleKey)}',
+                style: const pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          ),
+          for (final sec in spec.sections) ..._specSection(sec, ordered[i].data, size: 7.5),
+        ],
+        _footer('${spec.type.prefix}-${p.fileTag}'),
+      ],
+    ));
+    return _save(pdf, '${spec.type.name.toUpperCase()}-${p.fileTag}');
   }
 
   // ---------- Bitácora de servicio (conductor) ----------

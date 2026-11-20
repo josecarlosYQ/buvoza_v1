@@ -5,13 +5,17 @@ import 'package:intl/intl.dart';
 enum ClinicalRole { conductor, medico, enfermeria }
 
 /// Cada tipo corresponde a una de las plantillas SAMU (.xlsx o formato impreso).
-enum FormType { bitacora, actaMecanica, horasEmergencia, soapie, turno, procedimientos, oxigeno, almacen }
+enum FormType { bitacora, actaMecanica, horasEmergencia, atenciones, fichaAph, crue, reporteMedico, soapie, turno, procedimientos, oxigeno, almacen }
 
 extension FormTypeInfo on FormType {
   String get title => switch (this) {
         FormType.bitacora => 'Bitácora de servicio',
         FormType.actaMecanica => 'Acta de conformidad mecánica',
         FormType.horasEmergencia => 'Registro de horas de la emergencia',
+        FormType.atenciones => 'Registro de atenciones diarias',
+        FormType.fichaAph => 'Ficha de atención prehospitalaria',
+        FormType.crue => 'Centro regulador (CRUE)',
+        FormType.reporteMedico => 'Reporte médico diario',
         FormType.soapie => 'Registro SOAPIE',
         FormType.turno => 'Entrega de turno',
         FormType.procedimientos => 'Procedimientos',
@@ -23,6 +27,10 @@ extension FormTypeInfo on FormType {
         FormType.bitacora => 'Inicio y fin de turno, kilometraje y recorridos de la ambulancia.',
         FormType.actaMecanica => 'Checklist de 120 ítems (SI/NO/F · OPE/INOP/F) al recibir la unidad.',
         FormType.horasEmergencia => 'Horas y km de salida, foco, hospital y retorno de cada emergencia.',
+        FormType.atenciones => 'Un registro por paciente atendido. Genera la hoja mensual.',
+        FormType.fichaAph => 'Ficha completa por paciente: vitales, Glasgow, lesión, procedimientos y medicación.',
+        FormType.crue => 'Llamadas del centro regulador con sus horas, del pedido a la llegada a base.',
+        FormType.reporteMedico => 'Equipo del turno, ocurrencias, pendientes y conteo de atenciones.',
         FormType.soapie => 'Registro por paciente con funciones vitales y dictado por voz.',
         FormType.turno => 'Checklist de recepción del turno (M/T/N) de la ambulancia.',
         FormType.procedimientos => 'Conteo de procedimientos por turno. Genera el reporte quincenal.',
@@ -34,6 +42,10 @@ extension FormTypeInfo on FormType {
         FormType.bitacora => Icons.route,
         FormType.actaMecanica => Icons.build_circle,
         FormType.horasEmergencia => Icons.timer,
+        FormType.atenciones => Icons.personal_injury,
+        FormType.fichaAph => Icons.emergency,
+        FormType.crue => Icons.phone_in_talk,
+        FormType.reporteMedico => Icons.summarize,
         FormType.soapie => Icons.assignment_ind,
         FormType.turno => Icons.swap_horiz,
         FormType.procedimientos => Icons.vaccines,
@@ -45,6 +57,10 @@ extension FormTypeInfo on FormType {
         FormType.bitacora => 'BIT',
         FormType.actaMecanica => 'ACT',
         FormType.horasEmergencia => 'HOR',
+        FormType.atenciones => 'ATE',
+        FormType.fichaAph => 'APH',
+        FormType.crue => 'CRU',
+        FormType.reporteMedico => 'RMD',
         FormType.soapie => 'SOA',
         FormType.turno => 'TUR',
         FormType.procedimientos => 'PRO',
@@ -54,23 +70,27 @@ extension FormTypeInfo on FormType {
 
   /// Turnos que usa la plantilla original.
   List<String> get shifts => switch (this) {
-        FormType.soapie => const ['M', 'T', 'MT', 'N'],
+        FormType.soapie || FormType.atenciones => const ['M', 'T', 'MT', 'N'],
         FormType.turno => const ['M', 'T', 'N'],
         FormType.procedimientos || FormType.oxigeno || FormType.bitacora || FormType.actaMecanica || FormType.horasEmergencia => const ['D', 'N'],
-        FormType.almacen => const [],
+        FormType.reporteMedico => const ['D', 'N', 'M', 'T'],
+        FormType.almacen || FormType.fichaAph || FormType.crue => const [],
       };
 
   /// Los reportes agregados se generan por quincena; almacén y SOAPIE no.
   bool get isFortnightly => this == FormType.turno || this == FormType.procedimientos || this == FormType.oxigeno;
 
   /// Formatos que se imprimen uno por registro (el resto genera un reporte del periodo).
-  bool get perEntryPdf => const [FormType.soapie, FormType.bitacora, FormType.actaMecanica, FormType.horasEmergencia].contains(this);
+  bool get perEntryPdf => const [FormType.soapie, FormType.bitacora, FormType.actaMecanica, FormType.horasEmergencia, FormType.fichaAph, FormType.reporteMedico]
+      .contains(this);
 
   List<ClinicalRole> get roles => switch (this) {
-        FormType.bitacora || FormType.horasEmergencia => const [ClinicalRole.conductor],
-        FormType.actaMecanica => const [ClinicalRole.conductor, ClinicalRole.medico],
-        FormType.soapie || FormType.almacen || FormType.oxigeno => const [ClinicalRole.medico, ClinicalRole.enfermeria],
-        _ => const [ClinicalRole.enfermeria],
+        // Los formatos del conductor (mecánico) son exclusivos de ese rol.
+        FormType.bitacora || FormType.horasEmergencia || FormType.actaMecanica => const [ClinicalRole.conductor],
+        // Formatos impresos del médico.
+        FormType.atenciones || FormType.fichaAph || FormType.crue || FormType.reporteMedico => const [ClinicalRole.medico],
+        // Las 5 plantillas .xlsx de enfermería.
+        FormType.soapie || FormType.turno || FormType.procedimientos || FormType.oxigeno || FormType.almacen => const [ClinicalRole.enfermeria],
       };
 }
 
